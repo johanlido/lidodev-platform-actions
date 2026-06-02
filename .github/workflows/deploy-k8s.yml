@@ -1,4 +1,4 @@
-name: Reusable - Deploy to OVHcloud Kubernetes
+name: Reusable – Deploy to OVHcloud Kubernetes
 
 on:
   workflow_call:
@@ -33,10 +33,19 @@ jobs:
         uses: azure/setup-kubectl@v3
 
       - name: Configure kubeconfig
+        env:
+          KUBECONFIG_OVHCLOUD: ${{ secrets.KUBECONFIG_OVHCLOUD }}
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG_OVHCLOUD }}" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          mkdir -p "$HOME/.kube"
+          # Auto-detect base64-encoded kubeconfig and decode if needed.
+          if printf '%s' "$KUBECONFIG_OVHCLOUD" | head -c 64 | grep -qE '^(apiVersion|kind|clusters|users|contexts):'; then
+            printf '%s' "$KUBECONFIG_OVHCLOUD" > "$HOME/.kube/config"
+          else
+            printf '%s' "$KUBECONFIG_OVHCLOUD" | base64 -d > "$HOME/.kube/config"
+          fi
+          chmod 600 "$HOME/.kube/config"
+          kubectl version --client=true
+          kubectl cluster-info
 
       - name: Ensure namespace exists
         run: |
@@ -55,8 +64,8 @@ jobs:
         if: failure() && inputs.app_label != ''
         run: |
           echo '=== Pods ==='
-          kubectl get pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} -o wide
+          kubectl get pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} -o wide || true
           echo '=== Describe ==='
-          kubectl describe pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }}
+          kubectl describe pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} || true
           echo '=== Logs ==='
           kubectl logs -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} --tail=80 || true
