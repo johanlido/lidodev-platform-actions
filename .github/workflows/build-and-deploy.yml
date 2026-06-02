@@ -1,0 +1,60 @@
+name: Reusable – Build and Deploy
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        required: true
+        type: string
+      dockerfile:
+        required: false
+        type: string
+        default: Dockerfile
+      context:
+        required: false
+        type: string
+        default: "."
+      namespace:
+        required: true
+        type: string
+      manifests_path:
+        required: false
+        type: string
+        default: k8s/
+      app_label:
+        required: false
+        type: string
+        default: ""
+      deployment_name:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      KUBECONFIG_OVHCLOUD:
+        required: true
+    outputs:
+      image_tag:
+        description: "Full image reference with SHA tag"
+        value: ${{ jobs.build.outputs.image_tag }}
+
+jobs:
+  build:
+    uses: johanlido/lidodev-platform-actions/.github/workflows/docker-build.yml@main
+    with:
+      image_name: ${{ inputs.image_name }}
+      dockerfile: ${{ inputs.dockerfile }}
+      context: ${{ inputs.context }}
+    permissions:
+      contents: read
+      packages: write
+
+  deploy:
+    needs: build
+    uses: johanlido/lidodev-platform-actions/.github/workflows/deploy-k8s.yml@main
+    with:
+      namespace: ${{ inputs.namespace }}
+      manifests_path: ${{ inputs.manifests_path }}
+      app_label: ${{ inputs.app_label }}
+      deployment_name: ${{ inputs.deployment_name }}
+    secrets:
+      KUBECONFIG_OVHCLOUD: ${{ secrets.KUBECONFIG_OVHCLOUD }}
