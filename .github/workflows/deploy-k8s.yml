@@ -1,0 +1,62 @@
+name: Reusable - Deploy to OVHcloud Kubernetes
+
+on:
+  workflow_call:
+    inputs:
+      namespace:
+        required: true
+        type: string
+      manifests_path:
+        required: false
+        type: string
+        default: k8s/
+      app_label:
+        required: false
+        type: string
+        default: ""
+      deployment_name:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      KUBECONFIG_OVHCLOUD:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_OVHCLOUD }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl create namespace ${{ inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -f ${{ inputs.manifests_path }} -n ${{ inputs.namespace }}
+
+      - name: Wait for rollout
+        if: inputs.deployment_name != ''
+        run: |
+          kubectl rollout status deployment/${{ inputs.deployment_name }} -n ${{ inputs.namespace }} --timeout=300s
+
+      - name: Debug on failure
+        if: failure() && inputs.app_label != ''
+        run: |
+          echo '=== Pods ==='
+          kubectl get pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} -o wide
+          echo '=== Describe ==='
+          kubectl describe pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }}
+          echo '=== Logs ==='
+          kubectl logs -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} --tail=80 || true
