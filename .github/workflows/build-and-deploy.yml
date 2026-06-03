@@ -1,4 +1,4 @@
-name: Reusable – Build and Deploy
+name: Reusable — Build and Deploy
 
 on:
   workflow_call:
@@ -29,6 +29,10 @@ on:
         required: false
         type: string
         default: ""
+      container_name:
+        required: false
+        type: string
+        default: ""
     secrets:
       KUBECONFIG_OVHCLOUD:
         required: true
@@ -56,5 +60,7 @@ jobs:
       manifests_path: ${{ inputs.manifests_path }}
       app_label: ${{ inputs.app_label }}
       deployment_name: ${{ inputs.deployment_name }}
+      image_tag: ${{ needs.build.outputs.image_tag }}
+      container_name: ${{ inputs.container_name }}
     secrets:
       KUBECONFIG_OVHCLOUD: ${{ secrets.KUBECONFIG_OVHCLOUD }}
