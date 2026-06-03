@@ -1,4 +1,4 @@
-name: Reusable – Deploy to OVHcloud Kubernetes
+name: Reusable — Deploy to OVHcloud Kubernetes
 
 on:
   workflow_call:
@@ -18,6 +18,16 @@ on:
         required: false
         type: string
         default: ""
+      image_tag:
+        required: false
+        type: string
+        default: ""
+        description: "Full image reference (e.g. ghcr.io/owner/repo:sha). If set, kubectl set image is used to pin the deployment image."
+      container_name:
+        required: false
+        type: string
+        default: ""
+        description: "Container name in the deployment to update with image_tag. Defaults to deployment_name when empty."
     secrets:
       KUBECONFIG_OVHCLOUD:
         required: true
@@ -37,7 +47,6 @@ jobs:
           KUBECONFIG_OVHCLOUD: ${{ secrets.KUBECONFIG_OVHCLOUD }}
         run: |
           mkdir -p "$HOME/.kube"
-          # Auto-detect base64-encoded kubeconfig and decode if needed.
           if printf '%s' "$KUBECONFIG_OVHCLOUD" | head -c 64 | grep -qE '^(apiVersion|kind|clusters|users|contexts):'; then
             printf '%s' "$KUBECONFIG_OVHCLOUD" > "$HOME/.kube/config"
           else
@@ -55,17 +64,38 @@ jobs:
         run: |
           kubectl apply -f ${{ inputs.manifests_path }} -n ${{ inputs.namespace }}
 
+      - name: Pin deployment image to SHA tag
+        if: inputs.image_tag != '' && inputs.deployment_name != ''
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          DEPLOYMENT: ${{ inputs.deployment_name }}
+          NAMESPACE: ${{ inputs.namespace }}
+          CONTAINER_INPUT: ${{ inputs.container_name }}
+        run: |
+          CONTAINER="${CONTAINER_INPUT:-$DEPLOYMENT}"
+          echo "Setting image for deployment/$DEPLOYMENT container=$CONTAINER -> $IMAGE_TAG"
+          kubectl -n "$NAMESPACE" set image deployment/"$DEPLOYMENT" "$CONTAINER=$IMAGE_TAG" --record=false
+
+      - name: Force rollout restart (fallback when image_tag not provided)
+        if: inputs.image_tag == '' && inputs.deployment_name != ''
+        run: |
+          kubectl -n ${{ inputs.namespace }} rollout restart deployment/${{ inputs.deployment_name }}
+
       - name: Wait for rollout
         if: inputs.deployment_name != ''
         run: |
           kubectl rollout status deployment/${{ inputs.deployment_name }} -n ${{ inputs.namespace }} --timeout=300s
 
       - name: Debug on failure
-        if: failure() && inputs.app_label != ''
+        if: failure() && inputs.deployment_name != ''
         run: |
-          echo '=== Pods ==='
-          kubectl get pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} -o wide || true
-          echo '=== Describe ==='
-          kubectl describe pods -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} || true
-          echo '=== Logs ==='
-          kubectl logs -n ${{ inputs.namespace }} -l app=${{ inputs.app_label }} --tail=80 || true
+          echo "=== Deployment describe ==="
+          kubectl -n ${{ inputs.namespace }} describe deployment/${{ inputs.deployment_name }} || true
+          echo "=== Pods ==="
+          kubectl -n ${{ inputs.namespace }} get pods -l app=${{ inputs.app_label != '' && inputs.app_label || inputs.deployment_name }} -o wide || true
+          echo "=== Pod describe ==="
+          kubectl -n ${{ inputs.namespace }} describe pods -l app=${{ inputs.app_label != '' && inputs.app_label || inputs.deployment_name }} || true
+          echo "=== Pod logs (current) ==="
+          kubectl -n ${{ inputs.namespace }} logs -l app=${{ inputs.app_label != '' && inputs.app_label || inputs.deployment_name }} --tail=200 --all-containers=true || true
+          echo "=== Pod logs (previous) ==="
+          kubectl -n ${{ inputs.namespace }} logs -l app=${{ inputs.app_label != '' && inputs.app_label || inputs.deployment_name }} --previous --tail=200 --all-containers=true || true
