@@ -38,23 +38,28 @@ on:
         required: true
     outputs:
       image_tag:
-        description: "Full image reference with SHA tag"
+        description: "Full immutable image reference with SHA tag"
         value: ${{ jobs.build.outputs.image_tag }}
+
+permissions:
+  contents: read
 
 jobs:
   build:
     uses: johanlido/lidodev-platform-actions/.github/workflows/docker-build.yml@main
+    permissions:
+      contents: read
+      packages: write
     with:
       image_name: ${{ inputs.image_name }}
       dockerfile: ${{ inputs.dockerfile }}
       context: ${{ inputs.context }}
-    permissions:
-      contents: read
-      packages: write
 
   deploy:
     needs: build
     uses: johanlido/lidodev-platform-actions/.github/workflows/deploy-k8s.yml@main
+    permissions:
+      contents: read
     with:
       namespace: ${{ inputs.namespace }}
       manifests_path: ${{ inputs.manifests_path }}

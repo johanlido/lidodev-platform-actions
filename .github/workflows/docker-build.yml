@@ -17,12 +17,16 @@ on:
         default: "."
     outputs:
       image_tag:
-        description: "Full image reference with SHA tag"
+        description: "Full immutable image reference with SHA tag"
         value: ${{ jobs.build.outputs.image_tag }}
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -31,6 +35,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -42,21 +48,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute tags
+      - name: Compute immutable tag
         id: meta
         run: |
+          set -euo pipefail
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "image_tag=ghcr.io/${OWNER}/${{ inputs.image_name }}:${{ github.sha }}" >> $GITHUB_OUTPUT
-          echo "latest_tag=ghcr.io/${OWNER}/${{ inputs.image_name }}:latest" >> $GITHUB_OUTPUT
+          echo "image_tag=ghcr.io/${OWNER}/${{ inputs.image_name }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build and push immutable image
         uses: docker/build-push-action@v5
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           push: true
-          tags: |
-            ${{ steps.meta.outputs.image_tag }}
-            ${{ steps.meta.outputs.latest_tag }}
+          tags: ${{ steps.meta.outputs.image_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
